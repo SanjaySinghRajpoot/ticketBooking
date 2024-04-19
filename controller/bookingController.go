@@ -154,3 +154,36 @@ func GetBookingData(c *gin.Context) {
 		"bookingData": bookingData,
 	})
 }
+
+func CancelBooking(c *gin.Context) {
+
+	var booking struct {
+		UserID  string `json:"user_id" binding:"required"`
+		TrainID string `json:"train_id" binding:"required"`
+		Seats   int    `json:"seats" binding:"required"`
+	}
+
+	// Bind JSON request body to booking struct
+	if err := c.ShouldBindJSON(&booking); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update booking status to "cancelled" in the database
+	result, bookingError := config.DB.Exec("UPDATE bookings SET status = 'cancelled' WHERE user_id = ? AND train_id = ?", booking.UserID, booking.TrainID)
+	if bookingError != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel booking"})
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+
+	// Check if any rows were affected
+	if rowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Booking not found"})
+		return
+	}
+
+	// Booking successfully cancelled
+	c.JSON(http.StatusOK, gin.H{"message": "Booking cancelled successfully"})
+}

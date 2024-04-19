@@ -10,18 +10,24 @@ import (
 func GetRoute(r *gin.Engine) {
 
 	// admin routes
-	// add trains
-	r.POST("/api/train/add", controllers.SaveTrain)
+	r.POST("/api/train", controllers.SaveTrain)
+	r.DELETE("/api/train", controllers.DeleteTrain)
+
+	// add endpoint to update seats
 
 	// User routes
 	r.POST("/api/signup", controllers.Signup)
 	r.POST("/api/login", controllers.Login)
-
-	r.Use(middleware.RequireAuth)
 	r.POST("/api/logout", controllers.Logout)
+
+	// Trains Routes
+	r.Use(middleware.RequireAuth)
 	r.GET("/api/trains", controllers.CheckAvailableTrains)
 	r.GET("/api/trains/seats", controllers.CheckAvailableSeats)
 
+	// Booking Routes
 	r.POST("/api/booking", controllers.Booking)
 	r.GET("/api/booking", controllers.GetBookingData)
+	r.POST("/api/booking/cancel", controllers.CancelBooking)
+
 }

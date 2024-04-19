@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -119,4 +120,41 @@ func SaveTrain(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "Train added successfully"})
 
+}
+
+func DeleteTrain(c *gin.Context) {
+	// Extract train ID from query parameter
+	trainID, err := strconv.Atoi(c.Query("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid train ID"})
+		return
+	}
+
+	adminKeyInput := c.Query("admin_key")
+
+	// check admin api key
+	adminKey := os.Getenv("ADMIN_KEY")
+
+	if adminKeyInput != adminKey {
+		c.JSON(http.StatusUnauthorized, gin.H{"status": "failed", "message": "Not authorized to perform this action"})
+		return
+	}
+
+	// Update train record with deleted_at timestamp
+	result, err := config.DB.Exec("UPDATE trains SET deleted_at = $1 WHERE id = $2", time.Now(), trainID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete train"})
+		return
+	}
+
+	delrow, _ := result.RowsAffected()
+
+	// Check if any rows were affected
+	if delrow == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Train not found"})
+		return
+	}
+
+	// Train successfully deleted
+	c.JSON(http.StatusOK, gin.H{"message": "Train deleted successfully"})
 }
