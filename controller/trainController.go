@@ -140,7 +140,7 @@ func DeleteTrain(c *gin.Context) {
 		return
 	}
 
-	// Update train record with deleted_at timestamp
+	// Update train record with deleted_at timestamp (soft delete)
 	result, err := config.DB.Exec("UPDATE trains SET deleted_at = $1 WHERE id = $2", time.Now(), trainID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete train"})
@@ -157,4 +157,49 @@ func DeleteTrain(c *gin.Context) {
 
 	// Train successfully deleted
 	c.JSON(http.StatusOK, gin.H{"message": "Train deleted successfully"})
+}
+
+// SaveTrain updates train details based on provided payload
+func UpdateTrain(c *gin.Context) {
+	var updatedTrain struct {
+		TotalSeats int `json:"total_seats"`
+	}
+
+	if err := c.ShouldBindJSON(&updatedTrain); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	trainID := c.Query("id")
+	if trainID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Train ID is required"})
+		return
+	}
+
+	// SQL query dynamically based on provided fields
+	query := "UPDATE trains SET"
+	var params []interface{}
+
+	// Check if total seats are provided and append to query
+	if updatedTrain.TotalSeats != 0 {
+		query += " total_seats = $1,"
+		params = append(params, updatedTrain.TotalSeats)
+	}
+
+	query = query[:len(query)-1]
+
+	params = append(params, trainID)
+
+	result, updateErr := config.DB.Exec(query+" WHERE id = $2", params...)
+	if updateErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": updateErr.Error()})
+		return
+	}
+
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Train not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Train details updated successfully"})
 }

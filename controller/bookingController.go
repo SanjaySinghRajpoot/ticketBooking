@@ -76,7 +76,7 @@ func Booking(c *gin.Context) {
 	}
 
 	// Create a new entry in the bookings table
-	_, err = tx.Exec("INSERT INTO bookings (user_id, train_id, seats, status, created_at) VALUES ($1, $2, $3, $4)", booking.UserID, booking.TrainID, booking.Seats, "booked", time.Now())
+	_, err = tx.Exec("INSERT INTO bookings (user_id, train_id, seats, status, created_at) VALUES ($1, $2, $3, $4, $5)", booking.UserID, booking.TrainID, booking.Seats, "booked", time.Now())
 	if err != nil {
 		fmt.Println("Error creating booking:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -157,26 +157,79 @@ func GetBookingData(c *gin.Context) {
 
 func CancelBooking(c *gin.Context) {
 
-	var booking struct {
-		UserID  string `json:"user_id" binding:"required"`
-		TrainID string `json:"train_id" binding:"required"`
-		Seats   int    `json:"seats" binding:"required"`
-	}
-
-	// Bind JSON request body to booking struct
-	if err := c.ShouldBindJSON(&booking); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	bookingID := c.Query("id")
+	if bookingID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Train ID is required"})
 		return
 	}
 
 	// Update booking status to "cancelled" in the database
-	result, bookingError := config.DB.Exec("UPDATE bookings SET status = 'cancelled' WHERE user_id = ? AND train_id = ?", booking.UserID, booking.TrainID)
+	result, bookingError := config.DB.Exec("UPDATE bookings SET status = 'cancelled' WHERE id=$1", bookingID)
 	if bookingError != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel booking"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": bookingError.Error()})
+		return
+	}
+	rowsAffected, _ := result.RowsAffected()
+
+	// Lock the mutex to ensure exclusive access to shared resources
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	// Start a transaction
+	tx, err := config.DB.Begin()
+	if err != nil {
+		fmt.Println("Error starting transaction:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to start transaction",
+		})
+		return
+	}
+	defer tx.Rollback() // Rollback transaction on error
+
+	// Lock the selected row in the trains table
+	var canceledSeats int
+	var train_id int
+	row := tx.QueryRow("SELECT train_id, seats FROM bookings WHERE id = $1", bookingID)
+	if err := row.Scan(&train_id, &canceledSeats); err != nil {
+		fmt.Println("Error scanning row:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err,
+		})
 		return
 	}
 
-	rowsAffected, _ := result.RowsAffected()
+	// Lock the selected row in the trains table
+	var totalSeats int
+	row = tx.QueryRow("SELECT total_seats FROM trains WHERE id = $1 FOR UPDATE", train_id)
+	if err := row.Scan(&totalSeats); err != nil {
+		fmt.Println("Error scanning row:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get total seats from the train",
+		})
+		return
+	}
+
+	// Subtract the booked seats from the total seats
+	total_seats := totalSeats + canceledSeats
+
+	// Update the total seats in the train
+	_, err = tx.Exec("UPDATE trains SET total_seats = $1 WHERE id = $2", total_seats, train_id)
+	if err != nil {
+		fmt.Println("Error updating total seats:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update total seats in the train",
+		})
+		return
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		fmt.Println("Error committing transaction:", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to commit transaction",
+		})
+		return
+	}
 
 	// Check if any rows were affected
 	if rowsAffected == 0 {

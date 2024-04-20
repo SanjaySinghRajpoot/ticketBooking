@@ -12,8 +12,7 @@ func GetRoute(r *gin.Engine) {
 	// admin routes
 	r.POST("/api/train", controllers.SaveTrain)
 	r.DELETE("/api/train", controllers.DeleteTrain)
-
-	// add endpoint to update seats
+	r.PATCH("/api/train", controllers.UpdateTrain)
 
 	// User routes
 	r.POST("/api/signup", controllers.Signup)
